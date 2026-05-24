@@ -1,16 +1,19 @@
 """
 charts.py — Premium Chart Functions for Boston Marathon Dashboard
 Noon-inspired: Deep black + warm amber/gold/orange glow theme
-All functions have robust error handling to prevent crashes.
+Memory-optimized: All figures closed after rendering to bytes.
 """
 
-import matplotlib.pyplot as plt
 import matplotlib
+matplotlib.use("Agg")  # Non-interactive backend — lower memory
+import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import seaborn as sns
 import numpy as np
 import pandas as pd
 from matplotlib.colors import LinearSegmentedColormap
+import io
+import gc
 
 # ═══════════════════════════════════════════════════════════════
 # NOON THEME — Deep Black + Warm Amber/Gold
@@ -45,8 +48,12 @@ FEMALE_COLOR = "#e86850"
 PALETTE = [AMBER, ORANGE, GOLD, COPPER, BRONZE, RUST, AMBER_LIGHT, ORANGE_DEEP, GOLD_LIGHT, "#d06838"]
 
 WARM_CMAP = LinearSegmentedColormap.from_list("noon_warm",
-    ["#08080a", "#2a1a0a", "#5a3010", AMBER_DARK, AMBER, GOLD_LIGHT], N=256)
+    ["#08080a", "#2a1a0a", "#5a3010", AMBER_DARK, AMBER, GOLD_LIGHT], N=128)
 
+# Reduced DPI for memory savings
+_DPI = 100
+_SMALL = (6.5, 4.8)
+_WIDE = (12, 4.5)
 
 def _setup():
     matplotlib.rcParams.update({
@@ -69,7 +76,7 @@ def _setup():
         "legend.edgecolor": BORDER_WARM,
         "legend.labelcolor": TEXT_DIM,
         "legend.fontsize": 8.5,
-        "figure.dpi": 130,
+        "figure.dpi": _DPI,
     })
 
 _setup()
@@ -89,9 +96,21 @@ def _style(ax, title, xlabel="", ylabel="", grid_axis="both"):
     ax.set_facecolor(BG_CARD)
 
 
-def _empty_fig(msg="Not enough data to display"):
-    """Return a styled empty figure with a message."""
-    fig, ax = plt.subplots(figsize=(7, 5.5))
+def _fig_to_bytes(fig):
+    """Convert figure to PNG bytes, close figure, and free memory."""
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=_DPI, bbox_inches="tight",
+                facecolor=fig.get_facecolor(), edgecolor="none", pad_inches=0.15)
+    plt.close(fig)
+    del fig
+    gc.collect()
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def _empty_bytes(msg="Not enough data to display"):
+    """Return styled empty figure as bytes."""
+    fig, ax = plt.subplots(figsize=_SMALL)
     fig.patch.set_facecolor(BG_DEEP)
     ax.set_facecolor(BG_CARD)
     ax.text(0.5, 0.5, msg, ha="center", va="center",
@@ -102,7 +121,7 @@ def _empty_fig(msg="Not enough data to display"):
     ax.set_xticks([])
     ax.set_yticks([])
     fig.tight_layout()
-    return fig
+    return _fig_to_bytes(fig)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -111,14 +130,15 @@ def _empty_fig(msg="Not enough data to display"):
 def plot_pie_chart(df):
     try:
         if df.empty or "Country" not in df.columns:
-            return _empty_fig()
+            return _empty_bytes()
 
-        fig, ax = plt.subplots(figsize=(7, 5.5))
+        fig, ax = plt.subplots(figsize=_SMALL)
         fig.patch.set_facecolor(BG_DEEP)
 
         country_counts = df["Country"].value_counts()
         if country_counts.empty:
-            return _empty_fig()
+            plt.close(fig)
+            return _empty_bytes()
 
         top = country_counts.head(7)
         if len(country_counts) > 7:
@@ -151,9 +171,9 @@ def plot_pie_chart(df):
         ax.set_title("Winners by Country", fontsize=12.5, fontweight="bold",
                      color=TEXT_WHITE, pad=12, loc="left")
         fig.tight_layout()
-        return fig
+        return _fig_to_bytes(fig)
     except Exception:
-        return _empty_fig("Error rendering pie chart")
+        return _empty_bytes("Error rendering pie chart")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -163,9 +183,9 @@ def plot_histogram(df):
     try:
         data = df["Time_Minutes"].dropna()
         if len(data) < 2:
-            return _empty_fig("Not enough time data")
+            return _empty_bytes("Not enough time data")
 
-        fig, ax = plt.subplots(figsize=(7, 5.5))
+        fig, ax = plt.subplots(figsize=_SMALL)
         fig.patch.set_facecolor(BG_DEEP)
 
         n_bins = min(18, max(5, len(data) // 3))
@@ -188,9 +208,9 @@ def plot_histogram(df):
 
         _style(ax, "Finishing Time Distribution", "Time (Minutes)", "Frequency")
         fig.tight_layout()
-        return fig
+        return _fig_to_bytes(fig)
     except Exception:
-        return _empty_fig("Error rendering histogram")
+        return _empty_bytes("Error rendering histogram")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -199,9 +219,9 @@ def plot_histogram(df):
 def plot_line_chart(df):
     try:
         if df.empty:
-            return _empty_fig()
+            return _empty_bytes()
 
-        fig, ax = plt.subplots(figsize=(14, 5.2))
+        fig, ax = plt.subplots(figsize=_WIDE)
         fig.patch.set_facecolor(BG_DEEP)
 
         for gender, color, lbl in [("Male", AMBER, "Men"), ("Female", FEMALE_COLOR, "Women")]:
@@ -217,9 +237,9 @@ def plot_line_chart(df):
         ax.legend(fontsize=9, loc="upper right", framealpha=0.85)
         _style(ax, "Winning Times Trend Over the Years", "Year", "Time (Minutes)")
         fig.tight_layout()
-        return fig
+        return _fig_to_bytes(fig)
     except Exception:
-        return _empty_fig("Error rendering line chart")
+        return _empty_bytes("Error rendering line chart")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -228,14 +248,15 @@ def plot_line_chart(df):
 def plot_bar_chart(df):
     try:
         if df.empty or "Country" not in df.columns:
-            return _empty_fig()
+            return _empty_bytes()
 
-        fig, ax = plt.subplots(figsize=(7, 5.5))
+        fig, ax = plt.subplots(figsize=_SMALL)
         fig.patch.set_facecolor(BG_DEEP)
 
         top_countries = df["Country"].value_counts().head(10)
         if top_countries.empty:
-            return _empty_fig()
+            plt.close(fig)
+            return _empty_bytes()
 
         values = top_countries.values[::-1]
         labels = top_countries.index[::-1]
@@ -261,9 +282,9 @@ def plot_bar_chart(df):
         ax.set_xlim(0, max_val * 1.18)
         _style(ax, "Top 10 Countries by Wins", "Number of Wins", "", grid_axis="x")
         fig.tight_layout()
-        return fig
+        return _fig_to_bytes(fig)
     except Exception:
-        return _empty_fig("Error rendering bar chart")
+        return _empty_bytes("Error rendering bar chart")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -272,9 +293,9 @@ def plot_bar_chart(df):
 def plot_scatter(df):
     try:
         if df.empty:
-            return _empty_fig()
+            return _empty_bytes()
 
-        fig, ax = plt.subplots(figsize=(7, 5.5))
+        fig, ax = plt.subplots(figsize=_SMALL)
         fig.patch.set_facecolor(BG_DEEP)
 
         for gender, color, lbl in [("Male", AMBER, "Men"), ("Female", FEMALE_COLOR, "Women")]:
@@ -293,9 +314,9 @@ def plot_scatter(df):
         ax.legend(fontsize=9, framealpha=0.85)
         _style(ax, "Year vs Finishing Time", "Year", "Time (Minutes)")
         fig.tight_layout()
-        return fig
+        return _fig_to_bytes(fig)
     except Exception:
-        return _empty_fig("Error rendering scatter plot")
+        return _empty_bytes("Error rendering scatter plot")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -304,17 +325,17 @@ def plot_scatter(df):
 def plot_boxplot(df):
     try:
         if df.empty:
-            return _empty_fig()
+            return _empty_bytes()
 
-        fig, ax = plt.subplots(figsize=(7, 5.5))
+        fig, ax = plt.subplots(figsize=_SMALL)
         fig.patch.set_facecolor(BG_DEEP)
 
         genders = df["Gender"].unique()
         data_by_gender = [df[df["Gender"] == g]["Time_Minutes"].dropna() for g in genders]
-        # Remove empty series
         valid = [(g, d) for g, d in zip(genders, data_by_gender) if len(d) > 0]
         if not valid:
-            return _empty_fig("No time data available")
+            plt.close(fig)
+            return _empty_bytes("No time data available")
 
         genders_valid, data_valid = zip(*valid)
         bp = ax.boxplot(data_valid, labels=genders_valid, patch_artist=True, widths=0.4,
@@ -334,9 +355,9 @@ def plot_boxplot(df):
 
         _style(ax, "Time Distribution by Gender", "Gender", "Time (Minutes)", grid_axis="y")
         fig.tight_layout()
-        return fig
+        return _fig_to_bytes(fig)
     except Exception:
-        return _empty_fig("Error rendering box plot")
+        return _empty_bytes("Error rendering box plot")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -345,16 +366,17 @@ def plot_boxplot(df):
 def plot_heatmap(df):
     try:
         if df.empty:
-            return _empty_fig()
+            return _empty_bytes()
 
-        fig, ax = plt.subplots(figsize=(9, 5.5))
+        fig, ax = plt.subplots(figsize=(8, 5))
         fig.patch.set_facecolor(BG_DEEP)
 
         numeric_cols = ["Year", "Time_Minutes", "Distance (Miles)", "Distance (KM)",
                         "Pace_Per_Mile", "Pace_Per_KM", "Speed_MPH"]
         available = [c for c in numeric_cols if c in df.columns]
         if len(available) < 2:
-            return _empty_fig("Not enough numeric features")
+            plt.close(fig)
+            return _empty_bytes("Not enough numeric features")
 
         corr = df[available].corr()
 
@@ -372,9 +394,9 @@ def plot_heatmap(df):
         ax.tick_params(labelsize=8.5, length=0, colors=TEXT_DIM)
         _style(ax, "Feature Correlation Matrix", "", "")
         fig.tight_layout()
-        return fig
+        return _fig_to_bytes(fig)
     except Exception:
-        return _empty_fig("Error rendering heatmap")
+        return _empty_bytes("Error rendering heatmap")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -383,9 +405,9 @@ def plot_heatmap(df):
 def plot_area_chart(df):
     try:
         if df.empty:
-            return _empty_fig()
+            return _empty_bytes()
 
-        fig, ax = plt.subplots(figsize=(7, 5.5))
+        fig, ax = plt.subplots(figsize=_SMALL)
         fig.patch.set_facecolor(BG_DEEP)
 
         for gender, color, lbl in [("Male", AMBER, "Men"), ("Female", FEMALE_COLOR, "Women")]:
@@ -401,23 +423,22 @@ def plot_area_chart(df):
         ax.legend(fontsize=9, framealpha=0.85)
         _style(ax, "Cumulative Wins Over Time", "Year", "Cumulative Wins")
         fig.tight_layout()
-        return fig
+        return _fig_to_bytes(fig)
     except Exception:
-        return _empty_fig("Error rendering area chart")
+        return _empty_bytes("Error rendering area chart")
 
 
 # ═══════════════════════════════════════════════════════════════
-# 9. COUNT PLOT — Fixed for seaborn compatibility
+# 9. COUNT PLOT
 # ═══════════════════════════════════════════════════════════════
 def plot_countplot(df):
     try:
         if df.empty or "Decade_Label" not in df.columns:
-            return _empty_fig()
+            return _empty_bytes()
 
-        fig, ax = plt.subplots(figsize=(7, 5.5))
+        fig, ax = plt.subplots(figsize=_SMALL)
         fig.patch.set_facecolor(BG_DEEP)
 
-        # Manual implementation to avoid seaborn countplot compatibility issues
         order = sorted(df["Decade_Label"].unique())
         genders = ["Male", "Female"]
         gender_labels = {"Male": "Men", "Female": "Women"}
@@ -445,9 +466,9 @@ def plot_countplot(df):
         ax.legend(fontsize=8.5, framealpha=0.85)
         _style(ax, "Winners per Decade", "Decade", "Count")
         fig.tight_layout()
-        return fig
+        return _fig_to_bytes(fig)
     except Exception:
-        return _empty_fig("Error rendering count plot")
+        return _empty_bytes("Error rendering count plot")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -456,20 +477,19 @@ def plot_countplot(df):
 def plot_violin(df):
     try:
         if df.empty:
-            return _empty_fig()
+            return _empty_bytes()
 
-        # Need at least 2 data points per gender for violin
         valid_genders = []
         for g in df["Gender"].unique():
             if len(df[df["Gender"] == g]["Time_Minutes"].dropna()) >= 2:
                 valid_genders.append(g)
 
         if not valid_genders:
-            return _empty_fig("Not enough data for violin plot")
+            return _empty_bytes("Not enough data for violin plot")
 
         plot_df = df[df["Gender"].isin(valid_genders)]
 
-        fig, ax = plt.subplots(figsize=(7, 5.5))
+        fig, ax = plt.subplots(figsize=_SMALL)
         fig.patch.set_facecolor(BG_DEEP)
 
         sns.violinplot(data=plot_df, x="Gender", y="Time_Minutes", hue="Gender",
@@ -478,9 +498,9 @@ def plot_violin(df):
 
         _style(ax, "Time Distribution Density", "Gender", "Time (Minutes)", grid_axis="y")
         fig.tight_layout()
-        return fig
+        return _fig_to_bytes(fig)
     except Exception:
-        return _empty_fig("Error rendering violin plot")
+        return _empty_bytes("Error rendering violin plot")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -492,16 +512,16 @@ def plot_pairplot(df):
         cols = ["Year", "Time_Minutes", "Speed_MPH", "Gender"]
         available = [c for c in cols if c in df.columns]
         if "Gender" not in available or len(available) < 3:
-            return _empty_fig("Not enough features for pair plot")
+            return _empty_bytes("Not enough features for pair plot")
 
         plot_df = df[available].dropna()
         if len(plot_df) < 5:
-            return _empty_fig("Not enough data points")
+            return _empty_bytes("Not enough data points")
 
         g = sns.pairplot(plot_df, hue="Gender",
                          palette={"Male": AMBER, "Female": FEMALE_COLOR},
                          diag_kind="kde", plot_kws={"alpha": 0.5, "s": 22, "edgecolors": "none"},
-                         height=2.2)
+                         height=2.0)
         g.figure.patch.set_facecolor(BG_DEEP)
         for axi in g.axes.flatten():
             axi.set_facecolor(BG_CARD)
@@ -516,9 +536,18 @@ def plot_pairplot(df):
 
         g.figure.suptitle("Pair Plot — Multi-Feature Relationships", fontsize=12.5,
                           fontweight="bold", color=TEXT_WHITE, y=1.02)
-        return g.figure
+
+        # Convert pairplot to bytes too
+        buf = io.BytesIO()
+        g.figure.savefig(buf, format="png", dpi=90, bbox_inches="tight",
+                         facecolor=g.figure.get_facecolor(), edgecolor="none", pad_inches=0.15)
+        plt.close(g.figure)
+        del g
+        gc.collect()
+        buf.seek(0)
+        return buf.getvalue()
     except Exception:
-        return _empty_fig("Error rendering pair plot")
+        return _empty_bytes("Error rendering pair plot")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -527,15 +556,15 @@ def plot_pairplot(df):
 def plot_bubble_chart(df):
     try:
         if df.empty:
-            return _empty_fig()
+            return _empty_bytes()
 
-        fig, ax = plt.subplots(figsize=(7, 5.5))
+        fig, ax = plt.subplots(figsize=_SMALL)
         fig.patch.set_facecolor(BG_DEEP)
 
         plot_df = df.dropna(subset=["Speed_MPH", "Time_Minutes"])
         if plot_df.empty or len(plot_df) < 2:
-            ax.text(0.5, 0.5, "Not enough data", ha="center", va="center", color=TEXT_WHITE)
-            return fig
+            plt.close(fig)
+            return _empty_bytes("Not enough data")
 
         speed_min = plot_df["Speed_MPH"].min()
 
@@ -550,9 +579,9 @@ def plot_bubble_chart(df):
         ax.legend(fontsize=9, framealpha=0.85)
         _style(ax, "Bubble Chart — Speed as Size", "Year", "Time (Minutes)")
         fig.tight_layout()
-        return fig
+        return _fig_to_bytes(fig)
     except Exception:
-        return _empty_fig("Error rendering bubble chart")
+        return _empty_bytes("Error rendering bubble chart")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -561,14 +590,15 @@ def plot_bubble_chart(df):
 def plot_funnel_chart(df):
     try:
         if df.empty or "Time_Minutes" not in df.columns:
-            return _empty_fig()
+            return _empty_bytes()
 
-        fig, ax = plt.subplots(figsize=(7, 5.5))
+        fig, ax = plt.subplots(figsize=_SMALL)
         fig.patch.set_facecolor(BG_DEEP)
 
         time_data = df["Time_Minutes"].dropna()
         if len(time_data) < 2:
-            return _empty_fig("Not enough time data")
+            plt.close(fig)
+            return _empty_bytes("Not enough time data")
 
         bins = [0, 130, 140, 150, 160, 170, 180, 300]
         labels = ["< 2:10", "2:10-2:20", "2:20-2:30", "2:30-2:40",
@@ -577,10 +607,10 @@ def plot_funnel_chart(df):
         df_copy["Bracket"] = pd.cut(df_copy["Time_Minutes"], bins=bins, labels=labels)
         counts = df_copy["Bracket"].value_counts().reindex(labels).fillna(0)
 
-        # Remove empty brackets for cleaner display
         non_zero = counts[counts > 0]
         if non_zero.empty:
-            return _empty_fig("No data in time brackets")
+            plt.close(fig)
+            return _empty_bytes("No data in time brackets")
 
         colors_f = [AMBER_DARK, AMBER, ORANGE, COPPER, BRONZE, RUST, ORANGE_DEEP]
         max_val = counts.max() if counts.max() > 0 else 1
@@ -598,6 +628,6 @@ def plot_funnel_chart(df):
         ax.set_xlim(0, max_val * 1.2)
         _style(ax, "Time Bracket Distribution", "Number of Winners", "", grid_axis="x")
         fig.tight_layout()
-        return fig
+        return _fig_to_bytes(fig)
     except Exception:
-        return _empty_fig("Error rendering funnel chart")
+        return _empty_bytes("Error rendering funnel chart")

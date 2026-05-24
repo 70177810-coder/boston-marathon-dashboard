@@ -1,12 +1,13 @@
 """
 app.py — Boston Marathon Data Visualization Dashboard
 Noon-inspired premium dark theme: Deep black + warm amber/gold/orange glow.
-Single continuous scroll layout with smooth animations.
+Memory-optimized: charts render to PNG bytes, displayed as images.
 """
 
 import streamlit as st
 import pandas as pd
 import numpy as np
+import gc
 from filters import load_and_merge_data, apply_filters
 from charts import (
     plot_pie_chart, plot_histogram, plot_line_chart, plot_bar_chart,
@@ -51,84 +52,36 @@ st.markdown("""
         --text-muted: #4a4540;
     }
 
-    /* ═══ ANIMATIONS ═══ */
     @keyframes fadeInUp {
-        from {
-            opacity: 0;
-            transform: translateY(25px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
+        from { opacity: 0; transform: translateY(25px); }
+        to { opacity: 1; transform: translateY(0); }
     }
-
     @keyframes fadeIn {
         from { opacity: 0; }
         to { opacity: 1; }
     }
-
     @keyframes slideInLeft {
-        from {
-            opacity: 0;
-            transform: translateX(-30px);
-        }
-        to {
-            opacity: 1;
-            transform: translateX(0);
-        }
+        from { opacity: 0; transform: translateX(-30px); }
+        to { opacity: 1; transform: translateX(0); }
     }
-
-    @keyframes slideInRight {
-        from {
-            opacity: 0;
-            transform: translateX(30px);
-        }
-        to {
-            opacity: 1;
-            transform: translateX(0);
-        }
-    }
-
     @keyframes pulseGlow {
-        0%, 100% {
-            box-shadow: 0 0 12px rgba(232,147,58,0.3);
-        }
-        50% {
-            box-shadow: 0 0 20px rgba(232,147,58,0.5);
-        }
+        0%, 100% { box-shadow: 0 0 12px rgba(232,147,58,0.3); }
+        50% { box-shadow: 0 0 20px rgba(232,147,58,0.5); }
     }
-
     @keyframes shimmer {
         0% { background-position: -200% center; }
         100% { background-position: 200% center; }
     }
-
     @keyframes scaleIn {
-        from {
-            opacity: 0;
-            transform: scale(0.92);
-        }
-        to {
-            opacity: 1;
-            transform: scale(1);
-        }
+        from { opacity: 0; transform: scale(0.92); }
+        to { opacity: 1; transform: scale(1); }
     }
 
-    /* ── Global ── */
-    .stApp {
-        background: var(--bg-deep) !important;
-        font-family: 'Inter', -apple-system, sans-serif;
-    }
+    .stApp { background: var(--bg-deep) !important; font-family: 'Inter', -apple-system, sans-serif; }
     html, body, [data-testid="stAppViewContainer"],
-    [data-testid="stAppViewBlockContainer"] {
-        background: var(--bg-deep) !important;
-    }
-    html {
-        scroll-behavior: smooth;
-    }
+    [data-testid="stAppViewBlockContainer"] { background: var(--bg-deep) !important; }
+    html { scroll-behavior: smooth; }
 
-    /* ── Sidebar ── */
     section[data-testid="stSidebar"] {
         background: linear-gradient(180deg, #0a0a0e 0%, #0e0d10 100%) !important;
         border-right: 1px solid rgba(232, 147, 58, 0.06);
@@ -136,210 +89,131 @@ st.markdown("""
     }
     section[data-testid="stSidebar"] .stMarkdown h3,
     section[data-testid="stSidebar"] .stMarkdown h4 {
-        color: var(--amber) !important;
-        font-weight: 600 !important;
-        font-size: 0.7rem !important;
-        letter-spacing: 2px;
-        text-transform: uppercase;
-        opacity: 0.85;
+        color: var(--amber) !important; font-weight: 600 !important;
+        font-size: 0.7rem !important; letter-spacing: 2px; text-transform: uppercase; opacity: 0.85;
     }
-    section[data-testid="stSidebar"] hr {
-        border-color: rgba(232, 147, 58, 0.08) !important;
-    }
+    section[data-testid="stSidebar"] hr { border-color: rgba(232, 147, 58, 0.08) !important; }
 
-    /* ── KPI Cards with animation ── */
     div[data-testid="stMetric"] {
         background: linear-gradient(145deg, rgba(14,14,18,0.98), rgba(18,18,22,0.95));
-        border: 1px solid rgba(232, 147, 58, 0.08);
-        border-radius: 16px;
+        border: 1px solid rgba(232, 147, 58, 0.08); border-radius: 16px;
         padding: 24px 22px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.4),
-                    0 0 1px rgba(232, 147, 58, 0.1),
+        box-shadow: 0 4px 20px rgba(0,0,0,0.4), 0 0 1px rgba(232, 147, 58, 0.1),
                     inset 0 1px 0 rgba(255,255,255,0.02);
         transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        position: relative;
-        overflow: hidden;
+        position: relative; overflow: hidden;
         animation: scaleIn 0.5s ease-out backwards;
     }
     div[data-testid="stMetric"]:nth-child(1) { animation-delay: 0.1s; }
     div[data-testid="stMetric"]:nth-child(2) { animation-delay: 0.2s; }
     div[data-testid="stMetric"]:nth-child(3) { animation-delay: 0.3s; }
     div[data-testid="stMetric"]::before {
-        content: '';
-        position: absolute;
-        top: 0; left: 0; right: 0;
-        height: 1px;
+        content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
         background: linear-gradient(90deg, transparent, rgba(232,147,58,0.15), transparent);
     }
     div[data-testid="stMetric"]:hover {
         border-color: rgba(232, 147, 58, 0.25);
-        box-shadow: 0 8px 35px rgba(0,0,0,0.5),
-                    0 0 60px rgba(232, 147, 58, 0.06),
+        box-shadow: 0 8px 35px rgba(0,0,0,0.5), 0 0 60px rgba(232, 147, 58, 0.06),
                     inset 0 1px 0 rgba(255,255,255,0.03);
         transform: translateY(-4px) scale(1.02);
     }
     div[data-testid="stMetric"] label {
-        color: var(--text-dim) !important;
-        font-size: 0.68rem !important;
-        font-weight: 600 !important;
-        letter-spacing: 1.8px;
-        text-transform: uppercase;
+        color: var(--text-dim) !important; font-size: 0.68rem !important;
+        font-weight: 600 !important; letter-spacing: 1.8px; text-transform: uppercase;
     }
     div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
-        color: var(--text-white) !important;
-        font-size: 1.4rem !important;
-        font-weight: 800 !important;
-        letter-spacing: -0.5px;
-        white-space: nowrap;
-        overflow: visible;
+        color: var(--text-white) !important; font-size: 1.4rem !important;
+        font-weight: 800 !important; letter-spacing: -0.5px; white-space: nowrap; overflow: visible;
     }
     div[data-testid="stMetric"] div[data-testid="stMetricDelta"] {
-        color: var(--amber) !important;
-        font-size: 0.7rem !important;
-        font-weight: 500 !important;
+        color: var(--amber) !important; font-size: 0.7rem !important; font-weight: 500 !important;
     }
 
-    /* ── Dashboard Header with animation ── */
     .noon-header {
-        text-align: center;
-        padding: 50px 0 10px 0;
-        position: relative;
+        text-align: center; padding: 50px 0 10px 0; position: relative;
         animation: fadeInUp 0.8s ease-out;
     }
     .noon-header::before {
-        content: '';
-        position: absolute;
-        top: 0; left: 50%;
-        transform: translateX(-50%);
+        content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
         width: 300px; height: 200px;
         background: radial-gradient(ellipse, rgba(232,147,58,0.06) 0%, transparent 70%);
-        pointer-events: none;
-        animation: fadeIn 1.5s ease-out;
+        pointer-events: none; animation: fadeIn 1.5s ease-out;
     }
     .noon-badge {
-        display: inline-block;
-        background: rgba(232, 147, 58, 0.06);
-        border: 1px solid rgba(232, 147, 58, 0.12);
-        color: var(--amber);
-        padding: 5px 18px;
-        border-radius: 100px;
-        font-size: 0.65rem;
-        font-weight: 600;
-        letter-spacing: 2.5px;
-        text-transform: uppercase;
-        margin-bottom: 18px;
-        font-family: 'Inter', sans-serif;
+        display: inline-block; background: rgba(232, 147, 58, 0.06);
+        border: 1px solid rgba(232, 147, 58, 0.12); color: var(--amber);
+        padding: 5px 18px; border-radius: 100px; font-size: 0.65rem;
+        font-weight: 600; letter-spacing: 2.5px; text-transform: uppercase;
+        margin-bottom: 18px; font-family: 'Inter', sans-serif;
         animation: scaleIn 0.6s ease-out 0.2s backwards;
     }
     .noon-title {
         font-family: 'Playfair Display', serif !important;
-        font-size: 2.8rem !important;
-        font-weight: 700 !important;
-        color: var(--text-white) !important;
-        letter-spacing: -1px;
-        margin: 0 !important;
-        line-height: 1.15 !important;
+        font-size: 2.8rem !important; font-weight: 700 !important;
+        color: var(--text-white) !important; letter-spacing: -1px;
+        margin: 0 !important; line-height: 1.15 !important;
     }
     .noon-title span {
         background: linear-gradient(135deg, #f0a852, #e8933a, #d4a850);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-size: 200% auto;
-        animation: shimmer 4s linear infinite;
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        background-size: 200% auto; animation: shimmer 4s linear infinite;
     }
     .noon-sub {
-        text-align: center;
-        color: var(--text-dim);
-        font-size: 0.88rem;
-        margin: 12px 0 40px 0;
-        font-weight: 400;
-        line-height: 1.6;
-        letter-spacing: 0.2px;
+        text-align: center; color: var(--text-dim); font-size: 0.88rem;
+        margin: 12px 0 40px 0; font-weight: 400; line-height: 1.6; letter-spacing: 0.2px;
         animation: fadeIn 1s ease-out 0.4s backwards;
     }
 
-    /* ── Section Dividers with animation ── */
     .noon-section {
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        margin: 55px 0 28px 0;
-        animation: fadeInUp 0.6s ease-out;
+        display: flex; align-items: center; gap: 16px;
+        margin: 55px 0 28px 0; animation: fadeInUp 0.6s ease-out;
     }
     .noon-section-dot {
-        width: 8px; height: 8px;
-        border-radius: 50%;
-        background: var(--amber);
-        box-shadow: 0 0 12px rgba(232,147,58,0.3);
-        flex-shrink: 0;
+        width: 8px; height: 8px; border-radius: 50%; background: var(--amber);
+        box-shadow: 0 0 12px rgba(232,147,58,0.3); flex-shrink: 0;
         animation: pulseGlow 2.5s ease-in-out infinite;
     }
-    .noon-section-info {
-        flex-shrink: 0;
-    }
+    .noon-section-info { flex-shrink: 0; }
     .noon-section-title {
-        font-family: 'Playfair Display', serif;
-        font-size: 1.25rem;
-        font-weight: 600;
-        color: var(--text-white);
-        margin: 0;
-        letter-spacing: -0.3px;
-        line-height: 1.2;
+        font-family: 'Playfair Display', serif; font-size: 1.25rem;
+        font-weight: 600; color: var(--text-white); margin: 0;
+        letter-spacing: -0.3px; line-height: 1.2;
     }
     .noon-section-sub {
-        font-size: 0.72rem;
-        color: var(--text-dim);
-        margin: 3px 0 0 0;
-        font-weight: 400;
-        letter-spacing: 0.3px;
+        font-size: 0.72rem; color: var(--text-dim); margin: 3px 0 0 0;
+        font-weight: 400; letter-spacing: 0.3px;
     }
     .noon-section-line {
-        flex-grow: 1;
-        height: 1px;
+        flex-grow: 1; height: 1px;
         background: linear-gradient(90deg, rgba(232,147,58,0.15) 0%, transparent 100%);
     }
 
-    /* ── Chart wrapper with animation ── */
     .noon-chart {
         background: linear-gradient(145deg, rgba(12,12,16,0.98), rgba(16,15,18,0.95));
-        border: 1px solid rgba(232, 147, 58, 0.05);
-        border-radius: 18px;
-        padding: 8px;
-        margin-bottom: 18px;
+        border: 1px solid rgba(232, 147, 58, 0.05); border-radius: 18px;
+        padding: 8px; margin-bottom: 18px;
         box-shadow: 0 4px 25px rgba(0,0,0,0.3);
         transition: all 0.45s cubic-bezier(0.4, 0, 0.2, 1);
-        position: relative;
-        overflow: hidden;
+        position: relative; overflow: hidden;
         animation: fadeInUp 0.7s ease-out backwards;
     }
     .noon-chart::before {
-        content: '';
-        position: absolute;
-        top: 0; left: 0; right: 0;
-        height: 1px;
+        content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
         background: linear-gradient(90deg, transparent 0%, rgba(232,147,58,0.08) 50%, transparent 100%);
     }
     .noon-chart:hover {
         border-color: rgba(232, 147, 58, 0.15);
-        box-shadow: 0 8px 40px rgba(0,0,0,0.45),
-                    0 0 60px rgba(232, 147, 58, 0.04);
+        box-shadow: 0 8px 40px rgba(0,0,0,0.45), 0 0 60px rgba(232, 147, 58, 0.04);
         transform: translateY(-3px);
     }
-
-    /* Staggered animation delays for chart pairs */
     .chart-left .noon-chart { animation-delay: 0.1s; }
     .chart-right .noon-chart { animation-delay: 0.25s; }
 
-    /* ── Buttons ── */
     .stButton > button {
         background: linear-gradient(135deg, #c47520, #e8933a) !important;
-        color: #08080a !important;
-        border: none !important;
-        border-radius: 10px !important;
-        font-weight: 700 !important;
-        font-size: 0.8rem !important;
-        padding: 8px 22px !important;
-        letter-spacing: 0.5px !important;
+        color: #08080a !important; border: none !important; border-radius: 10px !important;
+        font-weight: 700 !important; font-size: 0.8rem !important;
+        padding: 8px 22px !important; letter-spacing: 0.5px !important;
         transition: all 0.3s ease !important;
     }
     .stButton > button:hover {
@@ -348,31 +222,24 @@ st.markdown("""
         transform: translateY(-2px) !important;
     }
 
-    /* ── Inputs with smooth transitions ── */
     .stSlider > div > div > div > div { background: var(--amber) !important; }
     .stSlider label, .stSelectbox label, .stMultiSelect label, .stTextInput label {
-        color: var(--text-dim) !important;
-        font-size: 0.78rem !important;
-        font-weight: 500 !important;
+        color: var(--text-dim) !important; font-size: 0.78rem !important; font-weight: 500 !important;
     }
-    .stSelectbox > div > div,
-    .stMultiSelect > div > div {
+    .stSelectbox > div > div, .stMultiSelect > div > div {
         background: rgba(14,14,18,0.95) !important;
         border-color: rgba(232,147,58,0.1) !important;
-        color: var(--text-light) !important;
-        border-radius: 10px !important;
+        color: var(--text-light) !important; border-radius: 10px !important;
         transition: border-color 0.3s ease, box-shadow 0.3s ease !important;
     }
-    .stSelectbox > div > div:focus-within,
-    .stMultiSelect > div > div:focus-within {
+    .stSelectbox > div > div:focus-within, .stMultiSelect > div > div:focus-within {
         border-color: rgba(232,147,58,0.3) !important;
         box-shadow: 0 0 15px rgba(232,147,58,0.08) !important;
     }
     .stTextInput > div > div > input {
         background: rgba(14,14,18,0.95) !important;
         border-color: rgba(232,147,58,0.1) !important;
-        color: var(--text-light) !important;
-        border-radius: 10px !important;
+        color: var(--text-light) !important; border-radius: 10px !important;
         transition: border-color 0.3s ease, box-shadow 0.3s ease !important;
     }
     .stTextInput > div > div > input:focus {
@@ -380,71 +247,42 @@ st.markdown("""
         box-shadow: 0 0 15px rgba(232,147,58,0.08) !important;
     }
 
-    /* ── Expander ── */
     details {
         background: rgba(12,12,16,0.95) !important;
         border: 1px solid rgba(232, 147, 58, 0.06) !important;
-        border-radius: 14px !important;
-        transition: all 0.3s ease !important;
+        border-radius: 14px !important; transition: all 0.3s ease !important;
     }
-    details:hover {
-        border-color: rgba(232, 147, 58, 0.12) !important;
-    }
-    details summary {
-        color: var(--amber) !important;
-        font-weight: 600 !important;
-        font-size: 0.9rem !important;
-    }
+    details:hover { border-color: rgba(232, 147, 58, 0.12) !important; }
+    details summary { color: var(--amber) !important; font-weight: 600 !important; font-size: 0.9rem !important; }
 
-    /* ── Dataframe ── */
     .stDataFrame {
         border: 1px solid rgba(232, 147, 58, 0.06) !important;
-        border-radius: 14px !important;
-        animation: fadeInUp 0.6s ease-out;
+        border-radius: 14px !important; animation: fadeInUp 0.6s ease-out;
     }
 
-    /* ── Footer ── */
     .noon-footer {
-        text-align: center;
-        padding: 35px 0;
-        margin-top: 50px;
-        border-top: 1px solid rgba(232, 147, 58, 0.06);
-        animation: fadeIn 0.8s ease-out;
+        text-align: center; padding: 35px 0; margin-top: 50px;
+        border-top: 1px solid rgba(232, 147, 58, 0.06); animation: fadeIn 0.8s ease-out;
     }
-    .noon-footer p {
-        color: var(--text-muted);
-        font-size: 0.75rem;
-        letter-spacing: 0.5px;
-    }
-    .noon-footer span.highlight {
-        color: var(--amber);
-        transition: color 0.3s ease;
-    }
-    .noon-footer span.highlight:hover {
-        color: var(--amber-light);
-    }
+    .noon-footer p { color: var(--text-muted); font-size: 0.75rem; letter-spacing: 0.5px; }
+    .noon-footer span.highlight { color: var(--amber); transition: color 0.3s ease; }
+    .noon-footer span.highlight:hover { color: var(--amber-light); }
 
-    /* ── Hide defaults ── */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     .stDeployButton {display: none;}
+    .stSpinner > div { border-color: var(--amber) !important; }
+    [data-testid="stHorizontalBlock"] > div { transition: all 0.3s ease; }
 
-    /* ── Loading spinner style ── */
-    .stSpinner > div {
-        border-color: var(--amber) !important;
-    }
-
-    /* ── Smooth column transitions ── */
-    [data-testid="stHorizontalBlock"] > div {
-        transition: all 0.3s ease;
-    }
+    /* Hide image expand button for chart images */
+    button[title="View fullscreen"] { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════
-# LOAD DATA
+# LOAD DATA (cached)
 # ═══════════════════════════════════════════════════════════════
 @st.cache_data
 def get_data():
@@ -458,6 +296,22 @@ except Exception as e:
 
 
 # ═══════════════════════════════════════════════════════════════
+# CHART CACHE — render once per filter, store as PNG bytes
+# ═══════════════════════════════════════════════════════════════
+@st.cache_data(max_entries=5, ttl=300)
+def render_chart(_chart_func, df_hash, chart_name):
+    """Render chart to PNG bytes and cache. df_hash used for cache key."""
+    # Reconstruct df from session — we pass the actual df via closure below
+    return None  # placeholder — real rendering done in render_chart_real
+
+def get_df_hash(filtered_df):
+    """Fast hash of dataframe for cache keys."""
+    return hash((len(filtered_df), tuple(filtered_df.columns),
+                 filtered_df.iloc[0].values.tobytes() if len(filtered_df) > 0 else b"",
+                 filtered_df.iloc[-1].values.tobytes() if len(filtered_df) > 0 else b""))
+
+
+# ═══════════════════════════════════════════════════════════════
 # SIDEBAR
 # ═══════════════════════════════════════════════════════════════
 st.sidebar.markdown("""
@@ -465,8 +319,7 @@ st.sidebar.markdown("""
     <div style='width: 48px; height: 48px; margin: 0 auto 12px auto;
          background: radial-gradient(circle, rgba(232,147,58,0.12), transparent);
          border: 1px solid rgba(232,147,58,0.15); border-radius: 14px;
-         display: flex; align-items: center; justify-content: center;
-         transition: all 0.3s ease;'>
+         display: flex; align-items: center; justify-content: center;'>
         <span style='font-size: 1.5rem;'>🏃</span>
     </div>
     <h2 style='margin:0; font-family: Playfair Display, serif;
@@ -483,7 +336,7 @@ st.sidebar.markdown("---")
 st.sidebar.markdown(f"""
 <div style='background: rgba(14,14,18,0.95); border: 1px solid rgba(232,147,58,0.08);
      border-radius: 14px; padding: 16px; text-align: center;
-     position: relative; overflow: hidden; transition: all 0.3s ease;'>
+     position: relative; overflow: hidden;'>
     <div style='position:absolute; top:0; left:0; right:0; height:1px;
          background: linear-gradient(90deg, transparent, rgba(232,147,58,0.1), transparent);'></div>
     <span style='color: #4a4540; font-size: 0.62rem; text-transform: uppercase;
@@ -537,16 +390,18 @@ def section(title, subtitle):
     </div>
     """, unsafe_allow_html=True)
 
-def safe_chart(chart_func, data, chart_name="Chart"):
-    """Safely render a chart with error handling."""
+def show_chart(chart_func, data, chart_name="Chart"):
+    """Render chart to bytes and display as image. Memory-safe."""
     try:
-        fig = chart_func(data)
-        if fig is not None:
-            st.pyplot(fig)
+        img_bytes = chart_func(data)
+        if img_bytes is not None:
+            st.image(img_bytes, use_container_width=True)
         else:
             st.info(f"No data available for {chart_name}")
     except Exception as e:
         st.warning(f"Could not render {chart_name}: {str(e)[:100]}")
+    finally:
+        gc.collect()
 
 if filtered_df.empty:
     st.warning("No data matches the current filters. Adjust the filter criteria.")
@@ -585,13 +440,14 @@ section("Overview & Composition", "Country distribution and time frequency analy
 col1, col2 = st.columns(2)
 with col1:
     st.markdown('<div class="chart-left"><div class="noon-chart">', unsafe_allow_html=True)
-    safe_chart(plot_pie_chart, filtered_df, "Pie Chart")
+    show_chart(plot_pie_chart, filtered_df, "Pie Chart")
     st.markdown('</div></div>', unsafe_allow_html=True)
 with col2:
     st.markdown('<div class="chart-right"><div class="noon-chart">', unsafe_allow_html=True)
-    safe_chart(plot_histogram, filtered_df, "Histogram")
+    show_chart(plot_histogram, filtered_df, "Histogram")
     st.markdown('</div></div>', unsafe_allow_html=True)
 
+gc.collect()
 
 # ═══════════════════════════════════════════════════════════════
 # SECTION 2 — TRENDS
@@ -599,19 +455,20 @@ with col2:
 section("Performance Trends", "How winning times have evolved across decades")
 
 st.markdown('<div class="noon-chart">', unsafe_allow_html=True)
-safe_chart(plot_line_chart, filtered_df, "Line Chart")
+show_chart(plot_line_chart, filtered_df, "Line Chart")
 st.markdown('</div>', unsafe_allow_html=True)
 
 col3, col4 = st.columns(2)
 with col3:
     st.markdown('<div class="chart-left"><div class="noon-chart">', unsafe_allow_html=True)
-    safe_chart(plot_scatter, filtered_df, "Scatter Plot")
+    show_chart(plot_scatter, filtered_df, "Scatter Plot")
     st.markdown('</div></div>', unsafe_allow_html=True)
 with col4:
     st.markdown('<div class="chart-right"><div class="noon-chart">', unsafe_allow_html=True)
-    safe_chart(plot_area_chart, filtered_df, "Area Chart")
+    show_chart(plot_area_chart, filtered_df, "Area Chart")
     st.markdown('</div></div>', unsafe_allow_html=True)
 
+gc.collect()
 
 # ═══════════════════════════════════════════════════════════════
 # SECTION 3 — COMPARISONS
@@ -621,13 +478,14 @@ section("Comparisons & Rankings", "Country standings and decade-wise breakdowns"
 col5, col6 = st.columns(2)
 with col5:
     st.markdown('<div class="chart-left"><div class="noon-chart">', unsafe_allow_html=True)
-    safe_chart(plot_bar_chart, filtered_df, "Bar Chart")
+    show_chart(plot_bar_chart, filtered_df, "Bar Chart")
     st.markdown('</div></div>', unsafe_allow_html=True)
 with col6:
     st.markdown('<div class="chart-right"><div class="noon-chart">', unsafe_allow_html=True)
-    safe_chart(plot_countplot, filtered_df, "Count Plot")
+    show_chart(plot_countplot, filtered_df, "Count Plot")
     st.markdown('</div></div>', unsafe_allow_html=True)
 
+gc.collect()
 
 # ═══════════════════════════════════════════════════════════════
 # SECTION 4 — STATISTICAL
@@ -637,17 +495,18 @@ section("Statistical Distribution", "Spread, density, and correlation analysis")
 col7, col8 = st.columns(2)
 with col7:
     st.markdown('<div class="chart-left"><div class="noon-chart">', unsafe_allow_html=True)
-    safe_chart(plot_boxplot, filtered_df, "Box Plot")
+    show_chart(plot_boxplot, filtered_df, "Box Plot")
     st.markdown('</div></div>', unsafe_allow_html=True)
 with col8:
     st.markdown('<div class="chart-right"><div class="noon-chart">', unsafe_allow_html=True)
-    safe_chart(plot_violin, filtered_df, "Violin Plot")
+    show_chart(plot_violin, filtered_df, "Violin Plot")
     st.markdown('</div></div>', unsafe_allow_html=True)
 
 st.markdown('<div class="noon-chart">', unsafe_allow_html=True)
-safe_chart(plot_heatmap, filtered_df, "Heatmap")
+show_chart(plot_heatmap, filtered_df, "Heatmap")
 st.markdown('</div>', unsafe_allow_html=True)
 
+gc.collect()
 
 # ═══════════════════════════════════════════════════════════════
 # SECTION 5 — BONUS
@@ -657,16 +516,17 @@ section("Advanced Visualizations", "Bubble chart, funnel analysis, and pair plot
 col9, col10 = st.columns(2)
 with col9:
     st.markdown('<div class="chart-left"><div class="noon-chart">', unsafe_allow_html=True)
-    safe_chart(plot_bubble_chart, filtered_df, "Bubble Chart")
+    show_chart(plot_bubble_chart, filtered_df, "Bubble Chart")
     st.markdown('</div></div>', unsafe_allow_html=True)
 with col10:
     st.markdown('<div class="chart-right"><div class="noon-chart">', unsafe_allow_html=True)
-    safe_chart(plot_funnel_chart, filtered_df, "Funnel Chart")
+    show_chart(plot_funnel_chart, filtered_df, "Funnel Chart")
     st.markdown('</div></div>', unsafe_allow_html=True)
 
 with st.expander("Pair Plot — Multi-Feature Relationship Analysis", expanded=False):
-    safe_chart(plot_pairplot, filtered_df, "Pair Plot")
+    show_chart(plot_pairplot, filtered_df, "Pair Plot")
 
+gc.collect()
 
 # ═══════════════════════════════════════════════════════════════
 # DATA TABLE
